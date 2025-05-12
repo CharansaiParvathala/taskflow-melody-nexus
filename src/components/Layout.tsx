@@ -6,6 +6,7 @@ import { MusicPlayer } from "@/components/MusicPlayer";
 import { Button } from "@/components/ui/button";
 import { UserRole } from "@/types/user";
 import { useNavigate } from "react-router-dom";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
 interface LayoutProps {
   children: ReactNode;
@@ -28,13 +29,15 @@ export const Layout = ({ children }: LayoutProps) => {
   };
 
   return (
-    <div className="min-h-screen flex flex-col">
+    <div className="min-h-screen flex flex-col bg-gradient-to-br from-background to-muted/20">
       {/* Header */}
-      <header className="bg-background border-b sticky top-0 z-10">
+      <header className="bg-background border-b sticky top-0 z-10 shadow-sm">
         <div className="container mx-auto px-4 py-3 flex items-center justify-between">
           <div className="flex items-center gap-4">
             {/* Company Logo */}
-            <div className="font-bold text-xl">WorkFlow</div>
+            <div className="font-bold text-xl text-primary">
+              WorkFlow
+            </div>
             
             {currentUser && (
               <span className="text-sm text-muted-foreground hidden sm:inline-block">
@@ -44,10 +47,24 @@ export const Layout = ({ children }: LayoutProps) => {
           </div>
           
           <div className="flex items-center gap-3">
-            <ThemeToggle />
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <ThemeToggle />
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>Toggle theme</p>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
             
             {currentUser && (
-              <Button size="sm" variant="outline" onClick={handleLogout}>
+              <Button 
+                size="sm" 
+                variant="outline" 
+                onClick={handleLogout}
+                className="hover-scale"
+              >
                 Logout
               </Button>
             )}
@@ -56,7 +73,7 @@ export const Layout = ({ children }: LayoutProps) => {
       </header>
       
       {/* Main content */}
-      <main className="flex-1 container mx-auto px-4 py-6">
+      <main className="flex-1 container mx-auto px-4 py-6 animate-fade-in">
         {children}
       </main>
       
