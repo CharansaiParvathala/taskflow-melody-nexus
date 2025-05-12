@@ -9,7 +9,226 @@ export type Json =
 export type Database = {
   public: {
     Tables: {
-      [_ in never]: never
+      expenses: {
+        Row: {
+          amount: number
+          approved: boolean
+          category: string
+          created_at: string
+          created_by: string
+          date: string
+          description: string | null
+          id: string
+          job_id: string | null
+          title: string
+        }
+        Insert: {
+          amount: number
+          approved?: boolean
+          category: string
+          created_at?: string
+          created_by: string
+          date?: string
+          description?: string | null
+          id?: string
+          job_id?: string | null
+          title: string
+        }
+        Update: {
+          amount?: number
+          approved?: boolean
+          category?: string
+          created_at?: string
+          created_by?: string
+          date?: string
+          description?: string | null
+          id?: string
+          job_id?: string | null
+          title?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "expenses_job_id_fkey"
+            columns: ["job_id"]
+            isOneToOne: false
+            referencedRelation: "jobs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      jobs: {
+        Row: {
+          assigned_to: string | null
+          budget: number
+          created_at: string
+          created_by: string | null
+          description: string
+          due_date: string | null
+          id: string
+          location: string
+          status: string
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          assigned_to?: string | null
+          budget?: number
+          created_at?: string
+          created_by?: string | null
+          description: string
+          due_date?: string | null
+          id?: string
+          location: string
+          status?: string
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          assigned_to?: string | null
+          budget?: number
+          created_at?: string
+          created_by?: string | null
+          description?: string
+          due_date?: string | null
+          id?: string
+          location?: string
+          status?: string
+          title?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      payments: {
+        Row: {
+          amount: number
+          approved_at: string | null
+          approved_by: string | null
+          created_at: string
+          created_by: string
+          id: string
+          job_id: string | null
+          notes: string | null
+          payment_date: string | null
+          payment_method: string | null
+          rejected_at: string | null
+          rejected_by: string | null
+          status: string
+          title: string
+        }
+        Insert: {
+          amount: number
+          approved_at?: string | null
+          approved_by?: string | null
+          created_at?: string
+          created_by: string
+          id?: string
+          job_id?: string | null
+          notes?: string | null
+          payment_date?: string | null
+          payment_method?: string | null
+          rejected_at?: string | null
+          rejected_by?: string | null
+          status?: string
+          title: string
+        }
+        Update: {
+          amount?: number
+          approved_at?: string | null
+          approved_by?: string | null
+          created_at?: string
+          created_by?: string
+          id?: string
+          job_id?: string | null
+          notes?: string | null
+          payment_date?: string | null
+          payment_method?: string | null
+          rejected_at?: string | null
+          rejected_by?: string | null
+          status?: string
+          title?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "payments_job_id_fkey"
+            columns: ["job_id"]
+            isOneToOne: false
+            referencedRelation: "jobs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      profiles: {
+        Row: {
+          avatar_url: string | null
+          created_at: string
+          email: string
+          id: string
+          is_active: boolean
+          is_archived: boolean
+          name: string
+          role: string
+        }
+        Insert: {
+          avatar_url?: string | null
+          created_at?: string
+          email: string
+          id: string
+          is_active?: boolean
+          is_archived?: boolean
+          name: string
+          role?: string
+        }
+        Update: {
+          avatar_url?: string | null
+          created_at?: string
+          email?: string
+          id?: string
+          is_active?: boolean
+          is_archived?: boolean
+          name?: string
+          role?: string
+        }
+        Relationships: []
+      }
+      resources: {
+        Row: {
+          assigned_to: string | null
+          available: boolean
+          cost_per_unit: number
+          created_at: string
+          id: string
+          name: string
+          quantity: number
+          status: string
+          type: string
+          unit: string
+        }
+        Insert: {
+          assigned_to?: string | null
+          available?: boolean
+          cost_per_unit?: number
+          created_at?: string
+          id?: string
+          name: string
+          quantity?: number
+          status?: string
+          type: string
+          unit?: string
+        }
+        Update: {
+          assigned_to?: string | null
+          available?: boolean
+          cost_per_unit?: number
+          created_at?: string
+          id?: string
+          name?: string
+          quantity?: number
+          status?: string
+          type?: string
+          unit?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never

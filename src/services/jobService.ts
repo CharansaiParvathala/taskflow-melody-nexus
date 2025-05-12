@@ -1,6 +1,6 @@
 
 import { supabase } from '@/integrations/supabase/client';
-import { Job } from '@/types/supabase';
+import type { Job } from '@/types/supabase';
 
 export const fetchJobs = async () => {
   const { data, error } = await supabase

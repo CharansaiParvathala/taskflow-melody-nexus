@@ -14,32 +14,42 @@ export interface Job {
   description: string;
   status: 'pending' | 'in-progress' | 'completed' | 'cancelled';
   assigned_to?: string | null;
-  created_by: string;
+  created_by: string | null;
   created_at: string;
   updated_at: string;
   location: string;
   budget: number;
+  due_date?: string | null;
 }
 
 export interface Payment {
   id: string;
-  job_id: string;
+  title: string;
+  job_id?: string | null;
   amount: number;
   status: 'pending' | 'completed' | 'failed';
-  payment_date: string;
-  payment_method: string;
-  notes?: string;
+  payment_date?: string | null;
+  payment_method?: string | null;
+  notes?: string | null;
+  created_by: string;
+  created_at: string;
+  approved_by?: string | null;
+  approved_at?: string | null;
+  rejected_by?: string | null;
+  rejected_at?: string | null;
 }
 
 export interface Expense {
   id: string;
-  job_id: string;
+  title: string;
+  job_id?: string | null;
   amount: number;
-  description: string;
+  description?: string | null;
   date: string;
   category: string;
   approved: boolean;
-  submitted_by: string;
+  created_by: string;
+  created_at: string;
 }
 
 export interface Resource {
@@ -50,4 +60,18 @@ export interface Resource {
   unit: string;
   cost_per_unit: number;
   available: boolean;
+  status: string;
+  assigned_to?: string | null;
+  created_at: string;
+}
+
+export interface Profile {
+  id: string;
+  name: string;
+  email: string;
+  role: 'worker' | 'leader' | 'checker' | 'admin';
+  avatar_url?: string | null;
+  created_at: string;
+  is_active: boolean;
+  is_archived: boolean;
 }

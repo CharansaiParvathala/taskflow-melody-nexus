@@ -1,36 +1,81 @@
 
+import { useState, useEffect } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
+import { supabase } from "@/integrations/supabase/client";
+import { Job } from "@/types/supabase";
+import { toast } from "sonner";
 
 const WorkerDashboard = () => {
-  // Mock data for assigned tasks
-  const tasks = [
-    {
-      id: 1,
-      title: "Site Cleanup - Project A",
-      date: "2025-05-12",
-      location: "123 Main St, Springfield",
-      status: "in-progress",
-      description: "Clean up debris and prepare site for new equipment installation.",
-    },
-    {
-      id: 2,
-      title: "Equipment Installation - Project B",
-      date: "2025-05-13",
-      location: "456 Oak Ave, Shelbyville",
-      status: "upcoming",
-      description: "Install and calibrate new monitoring equipment at the site.",
-    },
-    {
-      id: 3,
-      title: "Maintenance Check - Project C",
-      date: "2025-05-14",
-      location: "789 Pine Rd, Capital City",
-      status: "upcoming",
-      description: "Perform regular maintenance check on all installed systems.",
-    },
-  ];
+  const [tasks, setTasks] = useState<Job[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [today] = useState(new Date().toISOString().split('T')[0]);
+
+  useEffect(() => {
+    async function fetchAssignedJobs() {
+      try {
+        setLoading(true);
+        const { data: userData } = await supabase.auth.getUser();
+        
+        if (!userData?.user) {
+          toast.error("You must be logged in to view your tasks");
+          setLoading(false);
+          return;
+        }
+        
+        const { data, error } = await supabase
+          .from('jobs')
+          .select('*')
+          .eq('assigned_to', userData.user.id);
+          
+        if (error) {
+          console.error("Error fetching jobs:", error);
+          toast.error("Failed to load tasks");
+        } else {
+          setTasks(data || []);
+        }
+      } catch (error) {
+        console.error("Error in fetchAssignedJobs:", error);
+        toast.error("An error occurred while fetching your tasks");
+      } finally {
+        setLoading(false);
+      }
+    }
+    
+    fetchAssignedJobs();
+  }, []);
+
+  const getTaskDate = (task: Job) => {
+    if (task.due_date) {
+      return new Date(task.due_date).toISOString().split('T')[0];
+    }
+    return today;
+  };
+
+  const handleMarkComplete = async (taskId: string) => {
+    try {
+      const { error } = await supabase
+        .from('jobs')
+        .update({ status: 'completed' })
+        .eq('id', taskId);
+        
+      if (error) {
+        console.error("Error updating job status:", error);
+        toast.error("Failed to update task status");
+      } else {
+        toast.success("Task marked as complete");
+        // Update local state to reflect the change
+        setTasks(tasks.map(task => 
+          task.id === taskId ? { ...task, status: 'completed' } : task
+        ));
+      }
+    } catch (error) {
+      console.error("Error in handleMarkComplete:", error);
+      toast.error("An error occurred while updating the task");
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -44,13 +89,24 @@ const WorkerDashboard = () => {
         </CardHeader>
         <CardContent>
           <div className="space-y-4">
-            {tasks
-              .filter(task => task.date === "2025-05-12")
-              .map(task => (
-                <TaskCard key={task.id} task={task} />
-              ))}
+            {loading ? (
+              <>
+                <TaskSkeleton />
+                <TaskSkeleton />
+              </>
+            ) : (
+              tasks
+                .filter(task => getTaskDate(task) === today)
+                .map(task => (
+                  <TaskCard 
+                    key={task.id} 
+                    task={task} 
+                    onMarkComplete={handleMarkComplete} 
+                  />
+                ))
+            )}
               
-            {tasks.filter(task => task.date === "2025-05-12").length === 0 && (
+            {!loading && tasks.filter(task => getTaskDate(task) === today).length === 0 && (
               <p className="text-muted-foreground text-center py-4">
                 No tasks scheduled for today
               </p>
@@ -67,13 +123,24 @@ const WorkerDashboard = () => {
         </CardHeader>
         <CardContent>
           <div className="space-y-4">
-            {tasks
-              .filter(task => task.date !== "2025-05-12")
-              .map(task => (
-                <TaskCard key={task.id} task={task} />
-              ))}
+            {loading ? (
+              <>
+                <TaskSkeleton />
+                <TaskSkeleton />
+              </>
+            ) : (
+              tasks
+                .filter(task => getTaskDate(task) !== today)
+                .map(task => (
+                  <TaskCard 
+                    key={task.id} 
+                    task={task} 
+                    onMarkComplete={handleMarkComplete} 
+                  />
+                ))
+            )}
               
-            {tasks.filter(task => task.date !== "2025-05-12").length === 0 && (
+            {!loading && tasks.filter(task => getTaskDate(task) !== today).length === 0 && (
               <p className="text-muted-foreground text-center py-4">
                 No upcoming tasks scheduled
               </p>
@@ -95,7 +162,7 @@ const WorkerDashboard = () => {
                 Click or drag files to upload proof of work
               </p>
               <div className="mt-4">
-                <Button>Upload Files</Button>
+                <Button onClick={() => toast.info("File upload feature coming soon")}>Upload Files</Button>
               </div>
             </div>
           </div>
@@ -105,19 +172,49 @@ const WorkerDashboard = () => {
   );
 };
 
+const TaskSkeleton = () => (
+  <Card className="border">
+    <CardHeader className="pb-2">
+      <div className="flex justify-between items-start">
+        <div className="space-y-2">
+          <Skeleton className="h-5 w-40" />
+          <Skeleton className="h-4 w-60" />
+        </div>
+        <Skeleton className="h-6 w-24" />
+      </div>
+    </CardHeader>
+    <CardContent>
+      <Skeleton className="h-4 w-full mb-2" />
+      <Skeleton className="h-4 w-3/4" />
+    </CardContent>
+    <CardFooter className="border-t pt-4">
+      <div className="w-full flex gap-2">
+        <Skeleton className="h-9 w-full" />
+        <Skeleton className="h-9 w-full" />
+      </div>
+    </CardFooter>
+  </Card>
+);
+
 // Helper component for task cards
-const TaskCard = ({ task }: { task: any }) => {
-  const statusColors = {
+const TaskCard = ({ task, onMarkComplete }: { task: Job, onMarkComplete: (id: string) => Promise<void> }) => {
+  const statusColors: Record<string, string> = {
+    "pending": "bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300",
     "in-progress": "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300",
-    "upcoming": "bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300",
     "completed": "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300",
+    "cancelled": "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300",
   };
   
-  const statusLabels = {
+  const statusLabels: Record<string, string> = {
+    "pending": "Pending",
     "in-progress": "In Progress",
-    "upcoming": "Upcoming",
     "completed": "Completed",
+    "cancelled": "Cancelled",
   };
+
+  const dateString = task.due_date 
+    ? new Date(task.due_date).toLocaleDateString() 
+    : new Date().toLocaleDateString();
 
   return (
     <Card className="border">
@@ -125,10 +222,10 @@ const TaskCard = ({ task }: { task: any }) => {
         <div className="flex justify-between items-start">
           <div>
             <CardTitle className="text-lg">{task.title}</CardTitle>
-            <CardDescription>{task.date} - {task.location}</CardDescription>
+            <CardDescription>{dateString} - {task.location}</CardDescription>
           </div>
-          <Badge className={statusColors[task.status as keyof typeof statusColors]}>
-            {statusLabels[task.status as keyof typeof statusLabels]}
+          <Badge className={statusColors[task.status] || statusColors.pending}>
+            {statusLabels[task.status] || statusLabels.pending}
           </Badge>
         </div>
       </CardHeader>
@@ -140,8 +237,12 @@ const TaskCard = ({ task }: { task: any }) => {
           <Button size="sm" variant="outline" className="flex-1">
             View Details
           </Button>
-          {task.status === "in-progress" && (
-            <Button size="sm" className="flex-1">
+          {(task.status === "pending" || task.status === "in-progress") && (
+            <Button 
+              size="sm" 
+              className="flex-1"
+              onClick={() => onMarkComplete(task.id)}
+            >
               Mark Complete
             </Button>
           )}
