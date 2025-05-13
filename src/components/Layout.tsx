@@ -2,7 +2,7 @@
 import { ReactNode } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { ThemeToggle } from "@/components/ThemeToggle";
-import { MusicPlayer } from "@/components/MusicPlayer";
+import { MusicPlayer, MusicPlayerToggle } from "@/components/MusicPlayer";
 import { Button } from "@/components/ui/button";
 import { UserRole } from "@/types/user";
 import { useNavigate } from "react-router-dom";
@@ -20,12 +20,12 @@ const roleLabels: Record<UserRole, string> = {
 };
 
 export const Layout = ({ children }: LayoutProps) => {
-  const { currentUser, logout } = useAuth();
+  const { currentUser, switchRole } = useAuth();
   const navigate = useNavigate();
 
-  const handleLogout = () => {
-    logout();
-    navigate("/login");
+  const handleRoleSwitch = (role: UserRole) => {
+    switchRole(role);
+    navigate("/");
   };
 
   return (
@@ -47,6 +47,37 @@ export const Layout = ({ children }: LayoutProps) => {
           </div>
           
           <div className="flex items-center gap-3">
+            {/* Role Switcher */}
+            <div className="flex gap-2 mr-2">
+              <Button 
+                size="sm" 
+                variant={currentUser.role === "leader" ? "default" : "outline"}
+                onClick={() => handleRoleSwitch("leader")}
+                className="hidden sm:inline-flex"
+              >
+                Team Leader
+              </Button>
+              <Button 
+                size="sm" 
+                variant={currentUser.role === "checker" ? "default" : "outline"}
+                onClick={() => handleRoleSwitch("checker")}
+                className="hidden sm:inline-flex"
+              >
+                Checker
+              </Button>
+              <Button 
+                size="sm" 
+                variant={currentUser.role === "admin" ? "default" : "outline"}
+                onClick={() => handleRoleSwitch("admin")}
+                className="hidden sm:inline-flex"
+              >
+                Admin
+              </Button>
+            </div>
+
+            {/* Music Player Toggle */}
+            <MusicPlayerToggle />
+
             <TooltipProvider>
               <Tooltip>
                 <TooltipTrigger asChild>
@@ -57,34 +88,19 @@ export const Layout = ({ children }: LayoutProps) => {
                 </TooltipContent>
               </Tooltip>
             </TooltipProvider>
-            
-            {currentUser && (
-              <Button 
-                size="sm" 
-                variant="outline" 
-                onClick={handleLogout}
-                className="hover-scale"
-              >
-                Logout
-              </Button>
-            )}
           </div>
         </div>
       </header>
+      
+      {/* Music Player */}
+      <div className="fixed top-16 right-4 z-10">
+        <MusicPlayer />
+      </div>
       
       {/* Main content */}
       <main className="flex-1 container mx-auto px-4 py-6 animate-fade-in">
         {children}
       </main>
-      
-      {/* Music player for authenticated users */}
-      {currentUser && (
-        <div className="fixed bottom-0 left-0 right-0 p-4 z-10">
-          <div className="container mx-auto max-w-md">
-            <MusicPlayer />
-          </div>
-        </div>
-      )}
     </div>
   );
 };

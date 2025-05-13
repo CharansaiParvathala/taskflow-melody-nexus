@@ -1,11 +1,17 @@
 
+import { useState, useEffect } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, ResponsiveContainer, Tooltip, PieChart, Pie, Cell, Legend } from "recharts";
 import { ChartContainer } from "@/components/ui/chart";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { supabase } from "@/integrations/supabase/client";
+import { CreateJobDialog } from "@/components/job/CreateJobDialog";
+import { JobCard } from "@/components/job/JobCard";
+import { toast } from "sonner";
+import { Job } from "@/types/supabase";
 
-// Mock data
+// Project progress mock data
 const projectData = [
   { name: "Project A", complete: 65 },
   { name: "Project B", complete: 40 },
@@ -13,6 +19,7 @@ const projectData = [
   { name: "Project D", complete: 10 },
 ];
 
+// Status overview mock data
 const pieData = [
   { name: "In Progress", value: 3 },
   { name: "Completed", value: 2 },
@@ -22,6 +29,64 @@ const pieData = [
 const COLORS = ["#0088FE", "#00C49F", "#FFBB28"];
 
 const LeaderDashboard = () => {
+  const [isCreateJobDialogOpen, setIsCreateJobDialogOpen] = useState(false);
+  const [jobs, setJobs] = useState<Job[]>([]);
+  const [loading, setLoading] = useState(true);
+  
+  useEffect(() => {
+    // Fetch jobs from Supabase
+    const fetchJobs = async () => {
+      try {
+        setLoading(true);
+        const { data, error } = await supabase
+          .from('jobs')
+          .select('*')
+          .order('created_at', { ascending: false });
+          
+        if (error) {
+          throw error;
+        }
+        
+        setJobs(data || []);
+      } catch (error) {
+        console.error("Error fetching jobs:", error);
+        toast.error("Failed to load jobs");
+      } finally {
+        setLoading(false);
+      }
+    };
+    
+    fetchJobs();
+    
+    // Set up real-time subscription
+    const jobsSubscription = supabase
+      .channel('public:jobs')
+      .on('postgres_changes', 
+        { 
+          event: '*', 
+          schema: 'public', 
+          table: 'jobs' 
+        }, 
+        payload => {
+          if (payload.eventType === 'INSERT') {
+            setJobs(prevJobs => [payload.new as Job, ...prevJobs]);
+          } else if (payload.eventType === 'UPDATE') {
+            setJobs(prevJobs => 
+              prevJobs.map(job => job.id === payload.new.id ? payload.new as Job : job)
+            );
+          } else if (payload.eventType === 'DELETE') {
+            setJobs(prevJobs => prevJobs.filter(job => job.id !== payload.old.id));
+          }
+        }
+      )
+      .subscribe();
+      
+    // Cleanup subscription on unmount
+    return () => {
+      supabase.removeChannel(jobsSubscription);
+    };
+  }, []);
+  
   return (
     <div className="space-y-6">
       <h1 className="text-3xl font-bold">Team Leader Dashboard</h1>
@@ -34,7 +99,12 @@ const LeaderDashboard = () => {
             <CardDescription>Create new jobs and assign resources</CardDescription>
           </CardHeader>
           <CardContent>
-            <Button className="w-full">Create New Job</Button>
+            <Button 
+              className="w-full"
+              onClick={() => setIsCreateJobDialogOpen(true)}
+            >
+              Create New Job
+            </Button>
           </CardContent>
         </Card>
         
@@ -58,6 +128,35 @@ const LeaderDashboard = () => {
           </CardContent>
         </Card>
       </div>
+      
+      {/* Jobs List */}
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between">
+          <div>
+            <CardTitle>Current Jobs</CardTitle>
+            <CardDescription>Manage and track your active jobs</CardDescription>
+          </div>
+          <Button 
+            size="sm"
+            onClick={() => setIsCreateJobDialogOpen(true)}
+          >
+            Add New Job
+          </Button>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {jobs.length > 0 ? (
+              jobs.map((job) => (
+                <JobCard key={job.id} job={job} />
+              ))
+            ) : (
+              <div className="col-span-full py-8 text-center text-muted-foreground">
+                {loading ? "Loading jobs..." : "No jobs found. Create one to get started."}
+              </div>
+            )}
+          </div>
+        </CardContent>
+      </Card>
       
       {/* Project Progress */}
       <Card>
@@ -170,6 +269,12 @@ const LeaderDashboard = () => {
           </Tabs>
         </CardContent>
       </Card>
+
+      {/* Dialog for creating a new job */}
+      <CreateJobDialog 
+        isOpen={isCreateJobDialogOpen}
+        onClose={() => setIsCreateJobDialogOpen(false)}
+      />
     </div>
   );
 };

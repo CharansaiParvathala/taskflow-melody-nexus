@@ -7,9 +7,7 @@ import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { AuthProvider } from "@/contexts/AuthContext";
 import { ThemeProvider } from "@/contexts/ThemeContext";
 import { MusicPlayerProvider } from "@/contexts/MusicPlayerContext";
-import { PrivateRoute } from "@/components/PrivateRoute";
 import { RoleRouter } from "@/components/RoleRouter";
-import Login from "@/pages/Login";
 import NotFound from "@/pages/NotFound";
 import { useEffect } from "react";
 
@@ -31,13 +29,10 @@ const App = () => {
               <Sonner />
               <BrowserRouter>
                 <Routes>
-                  <Route path="/login" element={<Login />} />
+                  {/* Main route with role-based routing */}
+                  <Route path="/" element={<RoleRouter />} />
                   
-                  {/* Protected routes */}
-                  <Route element={<PrivateRoute />}>
-                    <Route path="/" element={<RoleRouter />} />
-                  </Route>
-                  
+                  {/* Catch-all route for 404s */}
                   <Route path="*" element={<NotFound />} />
                 </Routes>
               </BrowserRouter>

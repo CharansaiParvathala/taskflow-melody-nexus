@@ -22,6 +22,8 @@ interface MusicPlayerContextType {
   currentTrack: Track;
   isPlaying: boolean;
   volume: number;
+  isPlayerVisible: boolean;
+  togglePlayerVisibility: () => void;
   play: () => void;
   pause: () => void;
   stop: () => void;
@@ -44,6 +46,7 @@ export function MusicPlayerProvider({ children }: { children: ReactNode }) {
   const [isPlaying, setIsPlaying] = useState(false);
   const [volume, setVolume] = useState(0.5);
   const [audio, setAudio] = useState<HTMLAudioElement | null>(null);
+  const [isPlayerVisible, setIsPlayerVisible] = useState(false);
 
   useEffect(() => {
     // Initialize audio element when component mounts
@@ -87,6 +90,10 @@ export function MusicPlayerProvider({ children }: { children: ReactNode }) {
     }
   }, [volume, audio]);
 
+  const togglePlayerVisibility = () => {
+    setIsPlayerVisible(!isPlayerVisible);
+  };
+
   const play = () => setIsPlaying(true);
   const pause = () => setIsPlaying(false);
   const stop = () => {
@@ -120,6 +127,8 @@ export function MusicPlayerProvider({ children }: { children: ReactNode }) {
         currentTrack: musicTracks[currentTrackIndex],
         isPlaying,
         volume,
+        isPlayerVisible,
+        togglePlayerVisibility,
         play,
         pause,
         stop,
