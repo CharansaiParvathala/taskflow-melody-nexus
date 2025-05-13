@@ -27,7 +27,7 @@ export interface Payment {
   title: string;
   job_id?: string | null;
   amount: number;
-  status: 'pending' | 'completed' | 'failed' | 'flagged'; // Added 'flagged' status
+  status: 'pending' | 'completed' | 'failed' | 'flagged'; // Updated to include 'flagged'
   payment_date?: string | null;
   payment_method?: string | null;
   notes?: string | null;

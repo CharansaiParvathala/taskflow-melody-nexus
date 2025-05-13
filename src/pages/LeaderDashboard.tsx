@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -10,6 +9,7 @@ import { CreateJobDialog } from "@/components/job/CreateJobDialog";
 import { JobCard } from "@/components/job/JobCard";
 import { toast } from "sonner";
 import { Job } from "@/types/supabase";
+import { useAuth } from "@/contexts/AuthContext";
 
 // Project progress mock data
 const projectData = [
@@ -29,6 +29,7 @@ const pieData = [
 const COLORS = ["#0088FE", "#00C49F", "#FFBB28"];
 
 const LeaderDashboard = () => {
+  const { logout } = useAuth();
   const [isCreateJobDialogOpen, setIsCreateJobDialogOpen] = useState(false);
   const [jobs, setJobs] = useState<Job[]>([]);
   const [loading, setLoading] = useState(true);
@@ -50,7 +51,7 @@ const LeaderDashboard = () => {
         // Cast the data to ensure it matches our Job type
         const typedJobs = data?.map(job => ({
           ...job,
-          status: job.status as Job['status'] // Safe cast after updating type
+          status: validateJobStatus(job.status)
         })) || [];
         
         setJobs(typedJobs);
@@ -77,7 +78,7 @@ const LeaderDashboard = () => {
           if (payload.eventType === 'INSERT') {
             const newJob = {
               ...payload.new,
-              status: payload.new.status as Job['status']
+              status: validateJobStatus(payload.new.status)
             } as Job;
             
             setJobs(prevJobs => [newJob, ...prevJobs]);
@@ -87,7 +88,7 @@ const LeaderDashboard = () => {
                 if (job.id === payload.new.id) {
                   return {
                     ...payload.new,
-                    status: payload.new.status as Job['status']
+                    status: validateJobStatus(payload.new.status)
                   } as Job;
                 }
                 return job;
@@ -105,10 +106,21 @@ const LeaderDashboard = () => {
       supabase.removeChannel(jobsSubscription);
     };
   }, []);
+
+  // Helper function to validate job status
+  const validateJobStatus = (status: string): Job['status'] => {
+    const validStatuses: Job['status'][] = ['pending', 'in-progress', 'completed', 'cancelled'];
+    return validStatuses.includes(status as Job['status']) 
+      ? (status as Job['status']) 
+      : 'pending';
+  };
   
   return (
     <div className="space-y-6">
-      <h1 className="text-3xl font-bold">Team Leader Dashboard</h1>
+      <div className="flex justify-between items-center">
+        <h1 className="text-3xl font-bold">Team Leader Dashboard</h1>
+        <Button variant="outline" onClick={logout}>Logout</Button>
+      </div>
       
       {/* Quick Actions */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">

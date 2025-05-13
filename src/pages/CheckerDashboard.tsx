@@ -1,35 +1,89 @@
-import { useState, useEffect } from "react";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Badge } from "@/components/ui/badge";
-import { ChartContainer } from "@/components/ui/chart";
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, ResponsiveContainer, Tooltip } from "recharts";
-import { supabase } from "@/integrations/supabase/client";
-import { Payment } from "@/types/supabase";
-import { toast } from "sonner";
-import { PaymentStatusDialog } from "@/components/payment/PaymentStatusDialog";
 
-// Mock data
-const fraudRateData = [
-  { name: "Mon", rate: 5 },
-  { name: "Tue", rate: 3 },
-  { name: "Wed", rate: 7 },
-  { name: "Thu", rate: 2 },
-  { name: "Fri", rate: 4 },
-  { name: "Sat", rate: 1 },
-  { name: "Sun", rate: 0 },
-];
+import { useState, useEffect, useRef } from "react";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { supabase } from "@/integrations/supabase/client";
+import { Payment, Job } from "@/types/supabase";
+import { CreateJobDialog } from "@/components/job/CreateJobDialog";
+import { useAuth } from "@/contexts/AuthContext";
+import { toast } from "sonner";
 
 const CheckerDashboard = () => {
-  const [payments, setPayments] = useState<Payment[]>([]);
-  const [selectedPayment, setSelectedPayment] = useState<Payment | undefined>(undefined);
-  const [isPaymentDialogOpen, setIsPaymentDialogOpen] = useState(false);
-  const [newRequestsCount, setNewRequestsCount] = useState(0);
-  const [flaggedCount, setFlaggedCount] = useState(0);
-  const [pendingCount, setPendingCount] = useState(0);
+  const { logout } = useAuth();
+  const [paymentRequests, setPaymentRequests] = useState<Payment[]>([]);
+  const [flaggedRequests, setFlaggedRequests] = useState<Payment[]>([]);
+  const [selectedPayment, setSelectedPayment] = useState<Payment | null>(null);
+  const [isCreateJobDialogOpen, setIsCreateJobDialogOpen] = useState(false);
+  const [jobs, setJobs] = useState<Job[]>([]);
   
+  const dialogRef = useRef<HTMLDivElement>(null);
+
   useEffect(() => {
+    // Fetch jobs from Supabase
+    const fetchJobs = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('jobs')
+          .select('*')
+          .order('created_at', { ascending: false });
+          
+        if (error) {
+          throw error;
+        }
+        
+        // Cast the data to ensure it matches our Job type
+        const typedJobs = data?.map(job => ({
+          ...job,
+          status: validateJobStatus(job.status)
+        })) || [];
+        
+        setJobs(typedJobs);
+      } catch (error) {
+        console.error("Error fetching jobs:", error);
+        toast.error("Failed to load jobs");
+      }
+    };
+
+    fetchJobs();
+    
+    // Set up real-time subscription for jobs
+    const jobsSubscription = supabase
+      .channel('checker:jobs')
+      .on('postgres_changes', 
+        { 
+          event: '*', 
+          schema: 'public', 
+          table: 'jobs' 
+        }, 
+        payload => {
+          if (payload.eventType === 'INSERT') {
+            const newJob = {
+              ...payload.new,
+              status: validateJobStatus(payload.new.status)
+            } as Job;
+            
+            setJobs(prevJobs => [newJob, ...prevJobs]);
+          } else if (payload.eventType === 'UPDATE') {
+            setJobs(prevJobs => 
+              prevJobs.map(job => {
+                if (job.id === payload.new.id) {
+                  return {
+                    ...payload.new,
+                    status: validateJobStatus(payload.new.status)
+                  } as Job;
+                }
+                return job;
+              })
+            );
+          } else if (payload.eventType === 'DELETE') {
+            setJobs(prevJobs => prevJobs.filter(job => job.id !== payload.old.id));
+          }
+        }
+      )
+      .subscribe();
+      
     // Fetch payment requests from Supabase
     const fetchPaymentRequests = async () => {
       try {
@@ -45,19 +99,15 @@ const CheckerDashboard = () => {
         // Cast the data to ensure it matches our Payment type
         const typedPayments = data?.map(payment => ({
           ...payment,
-          status: payment.status as Payment['status'] // Safe cast after updating type
+          status: validatePaymentStatus(payment.status)
         })) || [];
         
-        setPayments(typedPayments);
+        setPaymentRequests(typedPayments);
         
-        // Count payments by status
-        const newCount = typedPayments.filter(p => p.status === 'pending').length || 0;
-        const flagged = typedPayments.filter(p => p.status === 'flagged').length || 0;
-        const pendingClarification = typedPayments.filter(p => p.status === 'pending' && p.notes?.includes('clarification')).length || 0;
+        // Filter for flagged requests
+        const flagged = typedPayments.filter(p => p.status === 'flagged');
+        setFlaggedRequests(flagged);
         
-        setNewRequestsCount(newCount);
-        setFlaggedCount(flagged);
-        setPendingCount(pendingClarification);
       } catch (error) {
         console.error("Error fetching payment requests:", error);
         toast.error("Failed to load payment requests");
@@ -68,7 +118,7 @@ const CheckerDashboard = () => {
     
     // Set up real-time subscription for payments
     const paymentsSubscription = supabase
-      .channel('public:payments')
+      .channel('checker:payments')
       .on('postgres_changes', 
         { 
           event: '*', 
@@ -79,28 +129,35 @@ const CheckerDashboard = () => {
           if (payload.eventType === 'INSERT') {
             const newPayment = {
               ...payload.new,
-              status: payload.new.status as Payment['status']
+              status: validatePaymentStatus(payload.new.status)
             } as Payment;
             
-            setPayments(prev => [newPayment, ...prev]);
-            if (newPayment.status === 'pending') {
-              setNewRequestsCount(prev => prev + 1);
-            } else if (newPayment.status === 'flagged') {
-              setFlaggedCount(prev => prev + 1);
+            setPaymentRequests(prev => [newPayment, ...prev]);
+            
+            // Add to flagged if applicable
+            if (newPayment.status === 'flagged') {
+              setFlaggedRequests(prev => [newPayment, ...prev]);
             }
           } else if (payload.eventType === 'UPDATE') {
-            setPayments(prev => 
+            setPaymentRequests(prev => 
               prev.map(payment => {
                 if (payment.id === payload.new.id) {
-                  // Update counts when status changes
                   const newPayment = {
                     ...payload.new,
-                    status: payload.new.status as Payment['status']
+                    status: validatePaymentStatus(payload.new.status)
                   } as Payment;
                   
+                  // Update flagged requests if status changed
                   if (payment.status !== newPayment.status) {
-                    updateStatusCounts(payment.status, newPayment.status);
+                    if (newPayment.status === 'flagged') {
+                      setFlaggedRequests(prev => [...prev, newPayment]);
+                    } else if (payment.status === 'flagged') {
+                      setFlaggedRequests(prev => 
+                        prev.filter(p => p.id !== payment.id)
+                      );
+                    }
                   }
+                  
                   return newPayment;
                 }
                 return payment;
@@ -113,316 +170,285 @@ const CheckerDashboard = () => {
       
     // Cleanup subscription on unmount
     return () => {
+      supabase.removeChannel(jobsSubscription);
       supabase.removeChannel(paymentsSubscription);
     };
   }, []);
 
-  // Fix the click function calls by using tabsTrigger refs instead
-  const selectNewTab = () => {
-    const tabTrigger = document.querySelector('[data-value="new"]') as HTMLButtonElement | null;
-    if (tabTrigger) {
-      tabTrigger.click();
-    }
+  // Helper function to validate job status
+  const validateJobStatus = (status: string): Job['status'] => {
+    const validStatuses: Job['status'][] = ['pending', 'in-progress', 'completed', 'cancelled'];
+    return validStatuses.includes(status as Job['status']) 
+      ? (status as Job['status']) 
+      : 'pending';
   };
 
-  const selectFlaggedTab = () => {
-    const tabTrigger = document.querySelector('[data-value="flagged"]') as HTMLButtonElement | null;
-    if (tabTrigger) {
-      tabTrigger.click();
-    }
+  // Helper function to validate payment status
+  const validatePaymentStatus = (status: string): Payment['status'] => {
+    const validStatuses: Payment['status'][] = ['pending', 'completed', 'failed', 'flagged'];
+    return validStatuses.includes(status as Payment['status']) 
+      ? (status as Payment['status']) 
+      : 'pending';
   };
 
-  // Helper function to update status counts when a payment status changes
-  const updateStatusCounts = (oldStatus: Payment['status'], newStatus: Payment['status']) => {
-    if (oldStatus === 'pending') {
-      setNewRequestsCount(prev => prev - 1);
-    } else if (oldStatus === 'flagged') {
-      setFlaggedCount(prev => prev - 1);
-    }
-    
-    if (newStatus === 'pending') {
-      setNewRequestsCount(prev => prev + 1);
-    } else if (newStatus === 'flagged') {
-      setFlaggedCount(prev => prev + 1);
-    }
-  };
-
-  const handleViewPayment = (payment: Payment) => {
+  const handleReviewPayment = (payment: Payment) => {
     setSelectedPayment(payment);
-    setIsPaymentDialogOpen(true);
+    
+    // Open dialog
+    setTimeout(() => {
+      if (dialogRef.current) {
+        const dialogElement = dialogRef.current.querySelector('button[data-state="closed"]');
+        if (dialogElement) {
+          (dialogElement as HTMLElement).click();
+        }
+      }
+    }, 0);
   };
 
-  const filterPaymentsByStatus = (status: string) => {
-    return payments.filter(payment => payment.status === status);
+  const getStatusColor = (status: Payment['status']) => {
+    switch (status) {
+      case "pending":
+        return "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300";
+      case "completed":
+        return "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300";
+      case "failed":
+        return "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300";
+      case "flagged":
+        return "bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-300";
+      default:
+        return "bg-gray-100 text-gray-800 dark:bg-gray-900/30 dark:text-gray-300";
+    }
   };
-
+  
   return (
     <div className="space-y-6">
-      <h1 className="text-3xl font-bold">Quality Checker Dashboard</h1>
-      
-      {/* Quick Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <Card>
-          <CardHeader>
-            <CardDescription>New Requests</CardDescription>
-            <CardTitle className="text-2xl">{newRequestsCount}</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <Button 
-              size="sm" 
-              variant="outline" 
-              className="w-full"
-              onClick={selectNewTab}
-            >
-              View All Requests
-            </Button>
-          </CardContent>
-        </Card>
-        
-        <Card>
-          <CardHeader>
-            <CardDescription>Flagged Anomalies</CardDescription>
-            <CardTitle className="text-2xl text-destructive">{flaggedCount}</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <Button 
-              size="sm" 
-              variant="outline" 
-              className="w-full"
-              onClick={selectFlaggedTab}
-            >
-              Review Anomalies
-            </Button>
-          </CardContent>
-        </Card>
-        
-        <Card>
-          <CardHeader>
-            <CardDescription>Pending Clarifications</CardDescription>
-            <CardTitle className="text-2xl">{pendingCount}</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <Button size="sm" variant="outline" className="w-full">
-              Check Status
-            </Button>
-          </CardContent>
-        </Card>
+      <div className="flex justify-between items-center">
+        <h1 className="text-3xl font-bold">Quality Checker Dashboard</h1>
+        <Button variant="outline" onClick={logout}>Logout</Button>
       </div>
       
-      {/* Approval Workflow */}
+      {/* Alerts Section - For flagged payment requests */}
+      {flaggedRequests.length > 0 && (
+        <Card className="border-orange-500 dark:border-orange-700">
+          <CardHeader>
+            <CardTitle className="text-orange-700 dark:text-orange-400 flex items-center">
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" viewBox="0 0 20 20" fill="currentColor">
+                <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+              </svg>
+              Flagged Payment Requests
+            </CardTitle>
+            <CardDescription>
+              These payment requests have been automatically flagged for review due to potential fraud indicators
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-4">
+              {flaggedRequests.map((payment) => (
+                <Card key={payment.id} className="border-l-4 border-l-orange-500">
+                  <div className="p-4">
+                    <div className="flex justify-between items-start">
+                      <div>
+                        <h3 className="font-medium">{payment.title}</h3>
+                        <p className="text-sm text-muted-foreground">Amount: ${payment.amount}</p>
+                        <div className="mt-2">
+                          <Badge className={getStatusColor(payment.status)}>
+                            {payment.status.charAt(0).toUpperCase() + payment.status.slice(1)}
+                          </Badge>
+                        </div>
+                      </div>
+                      <Button 
+                        variant="outline" 
+                        size="sm"
+                        onClick={() => handleReviewPayment(payment)}
+                      >
+                        Review
+                      </Button>
+                    </div>
+                  </div>
+                </Card>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Jobs Management */}
       <Card>
-        <CardHeader>
-          <CardTitle>Request Approval Workflow</CardTitle>
-          <CardDescription>Review and process payment requests</CardDescription>
+        <CardHeader className="flex flex-row items-center justify-between">
+          <div>
+            <CardTitle>Jobs Management</CardTitle>
+            <CardDescription>Review jobs and create new ones</CardDescription>
+          </div>
+          <Button onClick={() => setIsCreateJobDialogOpen(true)}>
+            Create New Job
+          </Button>
         </CardHeader>
         <CardContent>
-          <Tabs defaultValue="new">
-            <TabsList className="mb-4">
-              <TabsTrigger value="new">New Requests</TabsTrigger>
+          <div className="space-y-4">
+            {jobs.length > 0 ? (
+              jobs.map(job => (
+                <Card key={job.id} className="overflow-hidden">
+                  <div className="p-4">
+                    <h3 className="font-medium">{job.title}</h3>
+                    <p className="text-sm text-muted-foreground">{job.description}</p>
+                    <div className="flex justify-between items-center mt-2">
+                      <div className="flex items-center gap-2">
+                        <Badge>{job.status}</Badge>
+                        <span className="text-sm">Budget: ${job.budget}</span>
+                      </div>
+                      <Button variant="outline" size="sm">View Details</Button>
+                    </div>
+                  </div>
+                </Card>
+              ))
+            ) : (
+              <div className="py-8 text-center text-muted-foreground">
+                No jobs found. Create one to get started.
+              </div>
+            )}
+          </div>
+        </CardContent>
+      </Card>
+      
+      {/* Payment Requests */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Payment Requests</CardTitle>
+          <CardDescription>
+            Review incoming payment requests by status
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <Tabs defaultValue="all">
+            <TabsList>
+              <TabsTrigger value="all">All</TabsTrigger>
+              <TabsTrigger value="pending">Pending</TabsTrigger>
               <TabsTrigger value="flagged">Flagged</TabsTrigger>
-              <TabsTrigger value="approved">Approved</TabsTrigger>
-              <TabsTrigger value="rejected">Rejected</TabsTrigger>
+              <TabsTrigger value="completed">Completed</TabsTrigger>
             </TabsList>
             
-            <TabsContent value="new" className="space-y-4">
-              {filterPaymentsByStatus('pending').length > 0 ? (
-                filterPaymentsByStatus('pending').map(payment => (
-                  <RequestCard 
-                    key={payment.id}
-                    payment={payment}
-                    onView={() => handleViewPayment(payment)}
-                  />
+            {/* All Payments Tab Content */}
+            <TabsContent value="all" className="mt-4 space-y-4">
+              {paymentRequests.length > 0 ? (
+                paymentRequests.map(payment => (
+                  <Card key={payment.id} className="overflow-hidden">
+                    <div className="p-4">
+                      <div className="flex justify-between items-start">
+                        <div>
+                          <h3 className="font-medium">{payment.title}</h3>
+                          <p className="text-sm text-muted-foreground">Amount: ${payment.amount}</p>
+                          <div className="mt-2">
+                            <Badge className={getStatusColor(payment.status)}>
+                              {payment.status.charAt(0).toUpperCase() + payment.status.slice(1)}
+                            </Badge>
+                          </div>
+                        </div>
+                        <Button 
+                          variant="outline" 
+                          size="sm"
+                          onClick={() => handleReviewPayment(payment)}
+                        >
+                          Review
+                        </Button>
+                      </div>
+                    </div>
+                  </Card>
                 ))
               ) : (
                 <div className="py-8 text-center text-muted-foreground">
-                  No new payment requests.
+                  No payment requests found.
                 </div>
               )}
             </TabsContent>
             
-            <TabsContent value="flagged" className="space-y-4">
-              {filterPaymentsByStatus('flagged').length > 0 ? (
-                filterPaymentsByStatus('flagged').map(payment => (
-                  <RequestCard 
-                    key={payment.id}
-                    payment={payment}
-                    onView={() => handleViewPayment(payment)}
-                    flaggedReason="Potential anomaly detected in cost values"
-                  />
-                ))
-              ) : (
-                <div className="py-8 text-center text-muted-foreground">
-                  No flagged payment requests.
-                </div>
-              )}
+            {/* Filter by status tabs */}
+            <TabsContent value="pending" className="mt-4 space-y-4">
+              {paymentRequests.filter(p => p.status === 'pending').map(payment => (
+                <Card key={payment.id} className="overflow-hidden">
+                  <div className="p-4">
+                    <div className="flex justify-between items-start">
+                      <div>
+                        <h3 className="font-medium">{payment.title}</h3>
+                        <p className="text-sm text-muted-foreground">Amount: ${payment.amount}</p>
+                        <Badge className={getStatusColor(payment.status)}>
+                          {payment.status.charAt(0).toUpperCase() + payment.status.slice(1)}
+                        </Badge>
+                      </div>
+                      <Button 
+                        variant="outline" 
+                        size="sm"
+                        onClick={() => handleReviewPayment(payment)}
+                      >
+                        Review
+                      </Button>
+                    </div>
+                  </div>
+                </Card>
+              ))}
             </TabsContent>
             
-            <TabsContent value="approved" className="space-y-4">
-              {filterPaymentsByStatus('completed').length > 0 ? (
-                filterPaymentsByStatus('completed').map(payment => (
-                  <RequestCard 
-                    key={payment.id}
-                    payment={payment}
-                    onView={() => handleViewPayment(payment)}
-                  />
-                ))
-              ) : (
-                <div className="py-8 text-center text-muted-foreground">
-                  No approved payment requests.
-                </div>
-              )}
+            <TabsContent value="flagged" className="mt-4 space-y-4">
+              {paymentRequests.filter(p => p.status === 'flagged').map(payment => (
+                <Card key={payment.id} className="overflow-hidden border-l-4 border-l-orange-500">
+                  <div className="p-4">
+                    <div className="flex justify-between items-start">
+                      <div>
+                        <h3 className="font-medium">{payment.title}</h3>
+                        <p className="text-sm text-muted-foreground">Amount: ${payment.amount}</p>
+                        <Badge className={getStatusColor(payment.status)}>
+                          {payment.status.charAt(0).toUpperCase() + payment.status.slice(1)}
+                        </Badge>
+                      </div>
+                      <Button 
+                        variant="outline" 
+                        size="sm"
+                        onClick={() => handleReviewPayment(payment)}
+                      >
+                        Review
+                      </Button>
+                    </div>
+                  </div>
+                </Card>
+              ))}
             </TabsContent>
             
-            <TabsContent value="rejected" className="space-y-4">
-              {filterPaymentsByStatus('failed').length > 0 ? (
-                filterPaymentsByStatus('failed').map(payment => (
-                  <RequestCard 
-                    key={payment.id}
-                    payment={payment}
-                    onView={() => handleViewPayment(payment)}
-                  />
-                ))
-              ) : (
-                <div className="py-8 text-center text-muted-foreground">
-                  No rejected payment requests.
-                </div>
-              )}
+            <TabsContent value="completed" className="mt-4 space-y-4">
+              {paymentRequests.filter(p => p.status === 'completed').map(payment => (
+                <Card key={payment.id} className="overflow-hidden">
+                  <div className="p-4">
+                    <div className="flex justify-between items-start">
+                      <div>
+                        <h3 className="font-medium">{payment.title}</h3>
+                        <p className="text-sm text-muted-foreground">Amount: ${payment.amount}</p>
+                        <Badge className={getStatusColor(payment.status)}>
+                          {payment.status.charAt(0).toUpperCase() + payment.status.slice(1)}
+                        </Badge>
+                      </div>
+                      <Button 
+                        variant="outline" 
+                        size="sm"
+                        onClick={() => handleReviewPayment(payment)}
+                      >
+                        Review
+                      </Button>
+                    </div>
+                  </div>
+                </Card>
+              ))}
             </TabsContent>
           </Tabs>
         </CardContent>
       </Card>
-      
-      {/* Fraud Rate Chart */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Weekly Fraud Detection Rate</CardTitle>
-          <CardDescription>Percentage of requests flagged for potential fraud</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="h-80">
-            <ChartContainer
-              config={{
-                rate: {
-                  label: "Fraud Rate %",
-                  theme: {
-                    light: "hsl(var(--destructive))",
-                    dark: "hsl(var(--destructive))",
-                  },
-                },
-              }}
-            >
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart
-                  data={fraudRateData}
-                  margin={{
-                    top: 20,
-                    right: 30,
-                    left: 20,
-                    bottom: 5,
-                  }}
-                >
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="name" />
-                  <YAxis />
-                  <Tooltip />
-                  <Bar dataKey="rate" fill="var(--color-rate)" />
-                </BarChart>
-              </ResponsiveContainer>
-            </ChartContainer>
-          </div>
-        </CardContent>
-      </Card>
 
-      {/* Payment Status Dialog */}
-      <PaymentStatusDialog
-        isOpen={isPaymentDialogOpen}
-        onClose={() => setIsPaymentDialogOpen(false)}
-        payment={selectedPayment}
+      {/* Create Job Dialog */}
+      <CreateJobDialog
+        isOpen={isCreateJobDialogOpen}
+        onClose={() => setIsCreateJobDialogOpen(false)}
       />
+
+      {/* Reference for payment review dialog */}
+      <div ref={dialogRef}></div>
     </div>
-  );
-};
-
-// Helper component for displaying payment requests
-interface RequestCardProps {
-  payment: Payment;
-  onView: () => void;
-  flaggedReason?: string;
-}
-
-const RequestCard = ({ payment, onView, flaggedReason }: RequestCardProps) => {
-  const statusColors = {
-    pending: "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300",
-    flagged: "bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300",
-    completed: "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300",
-    failed: "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300"
-  };
-  
-  const statusLabels = {
-    pending: "New",
-    flagged: "Flagged",
-    completed: "Approved",
-    failed: "Rejected"
-  };
-
-  const formatDate = (dateString?: string | null) => {
-    if (!dateString) return "N/A";
-    return new Date(dateString).toLocaleDateString();
-  };
-
-  // Use the status from the payment object or default to 'pending'
-  const status = payment.status as keyof typeof statusColors || 'pending';
-
-  return (
-    <Card>
-      <CardHeader className="pb-2">
-        <div className="flex justify-between items-start">
-          <div>
-            <CardTitle>{payment.title}</CardTitle>
-            <CardDescription>
-              {payment.created_at && `Requested on ${formatDate(payment.created_at)}`}
-            </CardDescription>
-          </div>
-          <Badge className={statusColors[status]}>
-            {statusLabels[status]}
-          </Badge>
-        </div>
-      </CardHeader>
-      <CardContent>
-        <div className="text-xl font-semibold">${parseFloat(payment.amount.toString()).toLocaleString()}</div>
-        
-        {flaggedReason && (
-          <div className="mt-2 text-sm p-2 bg-destructive/10 text-destructive rounded-md">
-            <span className="font-semibold">Anomaly detected:</span> {flaggedReason}
-          </div>
-        )}
-        
-        {payment.notes && (
-          <div className="mt-2 text-sm">
-            <span className="font-medium">Notes:</span> {payment.notes}
-          </div>
-        )}
-      </CardContent>
-      <CardFooter className="border-t pt-4 flex gap-2">
-        {payment.status === "pending" || payment.status === "flagged" ? (
-          <>
-            <Button size="sm" variant="outline" className="flex-1" onClick={onView}>
-              Request Clarification
-            </Button>
-            <Button size="sm" variant="destructive" className="flex-1" onClick={onView}>
-              Flag Issue
-            </Button>
-            <Button size="sm" className="flex-1" onClick={onView}>
-              View Details
-            </Button>
-          </>
-        ) : (
-          <Button size="sm" variant="outline" className="w-full" onClick={onView}>
-            View Details
-          </Button>
-        )}
-      </CardFooter>
-    </Card>
   );
 };
 

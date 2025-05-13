@@ -57,13 +57,15 @@ export const CreateJobDialog = ({ isOpen, onClose }: CreateJobDialogProps) => {
           location: formData.location,
           budget: formData.budget || 0,
           due_date: formData.end_date || null,
-          created_by: currentUser.id,
+          created_by: currentUser?.id || "unknown",
           status: 'pending'
         })
         .select();
 
       if (error) {
-        throw error;
+        console.error("Supabase error:", error);
+        toast.error(`Failed to create job: ${error.message}`);
+        return;
       }
 
       toast.success("Job created successfully");

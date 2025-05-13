@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart";
@@ -6,10 +5,12 @@ import { LineChart, Line, XAxis, YAxis, CartesianGrid, ResponsiveContainer } fro
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { supabase } from "@/integrations/supabase/client";
-import { Payment } from "@/types/supabase";
+import { Payment, Job } from "@/types/supabase";
 import { Badge } from "@/components/ui/badge";
 import { CreateUserDialog } from "@/components/user/CreateUserDialog";
 import { PaymentStatusDialog } from "@/components/payment/PaymentStatusDialog";
+import { CreateJobDialog } from "@/components/job/CreateJobDialog";
+import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
 
 // Mock data for the charts
@@ -24,11 +25,14 @@ const spendData = [
 ];
 
 const AdminDashboard = () => {
+  const { logout } = useAuth();
   const [budgetTarget, setBudgetTarget] = useState("1000");
   const [todayExpense, setTodayExpense] = useState(700);
   const [weekExpense, setWeekExpense] = useState(5400);
   const [pendingPayments, setPendingPayments] = useState(0);
   const [completedPayments, setCompletedPayments] = useState(0);
+  const [isCreateJobDialogOpen, setIsCreateJobDialogOpen] = useState(false);
+  const [jobs, setJobs] = useState<Job[]>([]);
   
   const [paymentRequests, setPaymentRequests] = useState<Payment[]>([]);
   const [selectedPayment, setSelectedPayment] = useState<Payment | undefined>(undefined);
@@ -36,6 +40,69 @@ const AdminDashboard = () => {
   const [isUserDialogOpen, setIsUserDialogOpen] = useState(false);
 
   useEffect(() => {
+    // Fetch jobs from Supabase
+    const fetchJobs = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('jobs')
+          .select('*')
+          .order('created_at', { ascending: false });
+          
+        if (error) {
+          throw error;
+        }
+        
+        // Cast the data to ensure it matches our Job type
+        const typedJobs = data?.map(job => ({
+          ...job,
+          status: validateJobStatus(job.status)
+        })) || [];
+        
+        setJobs(typedJobs);
+      } catch (error) {
+        console.error("Error fetching jobs:", error);
+        toast.error("Failed to load jobs");
+      }
+    };
+    
+    fetchJobs();
+    
+    // Set up real-time subscription for jobs
+    const jobsSubscription = supabase
+      .channel('public:jobs')
+      .on('postgres_changes', 
+        { 
+          event: '*', 
+          schema: 'public', 
+          table: 'jobs' 
+        }, 
+        payload => {
+          if (payload.eventType === 'INSERT') {
+            const newJob = {
+              ...payload.new,
+              status: validateJobStatus(payload.new.status)
+            } as Job;
+            
+            setJobs(prevJobs => [newJob, ...prevJobs]);
+          } else if (payload.eventType === 'UPDATE') {
+            setJobs(prevJobs => 
+              prevJobs.map(job => {
+                if (job.id === payload.new.id) {
+                  return {
+                    ...payload.new,
+                    status: validateJobStatus(payload.new.status)
+                  } as Job;
+                }
+                return job;
+              })
+            );
+          } else if (payload.eventType === 'DELETE') {
+            setJobs(prevJobs => prevJobs.filter(job => job.id !== payload.old.id));
+          }
+        }
+      )
+      .subscribe();
+  
     // Fetch payment requests from Supabase
     const fetchPaymentRequests = async () => {
       try {
@@ -51,7 +118,7 @@ const AdminDashboard = () => {
         // Cast the data to ensure it matches our Payment type
         const typedPayments = data?.map(payment => ({
           ...payment,
-          status: payment.status as Payment['status'] // Safe cast after updating type
+          status: validatePaymentStatus(payment.status)
         })) || [];
         
         setPaymentRequests(typedPayments);
@@ -83,7 +150,7 @@ const AdminDashboard = () => {
           if (payload.eventType === 'INSERT') {
             const newPayment = {
               ...payload.new,
-              status: payload.new.status as Payment['status']
+              status: validatePaymentStatus(payload.new.status)
             } as Payment;
             
             setPaymentRequests(prev => [newPayment, ...prev]);
@@ -95,7 +162,7 @@ const AdminDashboard = () => {
                   // Update counts when status changes
                   const newPayment = {
                     ...payload.new,
-                    status: payload.new.status as Payment['status']
+                    status: validatePaymentStatus(payload.new.status)
                   } as Payment;
                   
                   if (payment.status !== newPayment.status) {
@@ -118,9 +185,26 @@ const AdminDashboard = () => {
       
     // Cleanup subscription on unmount
     return () => {
+      supabase.removeChannel(jobsSubscription);
       supabase.removeChannel(paymentsSubscription);
     };
   }, []);
+
+  // Helper function to validate job status
+  const validateJobStatus = (status: string): Job['status'] => {
+    const validStatuses: Job['status'][] = ['pending', 'in-progress', 'completed', 'cancelled'];
+    return validStatuses.includes(status as Job['status']) 
+      ? (status as Job['status']) 
+      : 'pending';
+  };
+
+  // Helper function to validate payment status
+  const validatePaymentStatus = (status: string): Payment['status'] => {
+    const validStatuses: Payment['status'][] = ['pending', 'completed', 'failed', 'flagged'];
+    return validStatuses.includes(status as Payment['status']) 
+      ? (status as Payment['status']) 
+      : 'pending';
+  };
 
   const handleViewPayment = (payment: Payment) => {
     setSelectedPayment(payment);
@@ -144,7 +228,10 @@ const AdminDashboard = () => {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-3xl font-bold">Admin Dashboard</h1>
+      <div className="flex justify-between items-center">
+        <h1 className="text-3xl font-bold">Admin Dashboard</h1>
+        <Button variant="outline" onClick={logout}>Logout</Button>
+      </div>
       
       {/* Stats Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
@@ -202,6 +289,44 @@ const AdminDashboard = () => {
           </CardContent>
         </Card>
       </div>
+      
+      {/* Jobs Management Card */}
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between">
+          <div>
+            <CardTitle>Jobs Management</CardTitle>
+            <CardDescription>Create and manage jobs</CardDescription>
+          </div>
+          <Button onClick={() => setIsCreateJobDialogOpen(true)}>
+            Create New Job
+          </Button>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-4">
+            {jobs.length > 0 ? (
+              jobs.map(job => (
+                <Card key={job.id} className="overflow-hidden">
+                  <div className="p-4">
+                    <h3 className="font-medium">{job.title}</h3>
+                    <p className="text-sm text-muted-foreground">{job.description}</p>
+                    <div className="flex justify-between items-center mt-2">
+                      <div className="flex items-center gap-2">
+                        <Badge>{job.status}</Badge>
+                        <span className="text-sm">Budget: ${job.budget}</span>
+                      </div>
+                      <Button variant="outline" size="sm">View Details</Button>
+                    </div>
+                  </div>
+                </Card>
+              ))
+            ) : (
+              <div className="py-8 text-center text-muted-foreground">
+                No jobs found. Create one to get started.
+              </div>
+            )}
+          </div>
+        </CardContent>
+      </Card>
       
       {/* Spending vs Budget Chart */}
       <Card className="col-span-2">
@@ -356,6 +481,12 @@ const AdminDashboard = () => {
           </div>
         </CardContent>
       </Card>
+
+      {/* Create Job Dialog */}
+      <CreateJobDialog
+        isOpen={isCreateJobDialogOpen}
+        onClose={() => setIsCreateJobDialogOpen(false)}
+      />
 
       {/* Create User Dialog */}
       <CreateUserDialog

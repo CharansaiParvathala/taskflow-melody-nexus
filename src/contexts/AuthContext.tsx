@@ -31,26 +31,29 @@ const mockUsers: User[] = [
 ];
 
 interface AuthContextType {
-  currentUser: User;
+  currentUser: User | null;
   switchRole: (role: UserRole) => void;
   isAuthenticated: boolean;
-  login: (email: string, password: string) => Promise<boolean>; // Added login method
+  login: (email: string, password: string) => Promise<boolean>;
+  logout: () => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  // Default to the Team Leader user
-  const [currentUser, setCurrentUser] = useState<User>(mockUsers[1]);
-  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(true);
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
 
   useEffect(() => {
-    // Check for saved role preference in localStorage
+    // Check for saved auth state in localStorage
+    const savedAuth = localStorage.getItem("isAuthenticated");
     const savedRole = localStorage.getItem("currentRole");
-    if (savedRole) {
+    
+    if (savedAuth === "true" && savedRole) {
       const roleUser = mockUsers.find(u => u.role === savedRole);
       if (roleUser) {
         setCurrentUser(roleUser);
+        setIsAuthenticated(true);
       }
     }
   }, []);
@@ -73,6 +76,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // In a real app, we'd validate the password here
       setCurrentUser(user);
       setIsAuthenticated(true);
+      localStorage.setItem("isAuthenticated", "true");
       localStorage.setItem("currentRole", user.role);
       return true;
     }
@@ -80,8 +84,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return false;
   };
 
+  // Logout function
+  const logout = () => {
+    setCurrentUser(null);
+    setIsAuthenticated(false);
+    localStorage.removeItem("isAuthenticated");
+    localStorage.removeItem("currentRole");
+  };
+
   return (
-    <AuthContext.Provider value={{ currentUser, switchRole, isAuthenticated, login }}>
+    <AuthContext.Provider value={{ currentUser, switchRole, isAuthenticated, login, logout }}>
       {children}
     </AuthContext.Provider>
   );
