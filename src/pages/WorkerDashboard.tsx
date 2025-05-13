@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -34,7 +33,14 @@ const WorkerDashboard = () => {
           console.error("Error fetching jobs:", error);
           toast.error("Failed to load tasks");
         } else {
-          setTasks(data || []);
+          // Convert the data to match our Job type
+          const typedData = data?.map(job => ({
+            ...job,
+            // Ensure the status is one of the allowed values in our Job type
+            status: validateJobStatus(job.status)
+          })) as Job[];
+          
+          setTasks(typedData || []);
         }
       } catch (error) {
         console.error("Error in fetchAssignedJobs:", error);
@@ -46,6 +52,16 @@ const WorkerDashboard = () => {
     
     fetchAssignedJobs();
   }, []);
+
+  // Helper function to validate job status
+  const validateJobStatus = (status: string): "pending" | "in-progress" | "completed" | "cancelled" => {
+    const validStatuses = ["pending", "in-progress", "completed", "cancelled"];
+    if (validStatuses.includes(status)) {
+      return status as "pending" | "in-progress" | "completed" | "cancelled";
+    }
+    // Default to "pending" if the status is not one of the expected values
+    return "pending";
+  };
 
   const getTaskDate = (task: Job) => {
     if (task.due_date) {
