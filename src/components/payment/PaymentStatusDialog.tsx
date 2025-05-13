@@ -166,7 +166,7 @@ export const PaymentStatusDialog = ({ isOpen, onClose, payment }: PaymentStatusD
             Close
           </Button>
           
-          {payment && payment.status !== "completed" && payment.status !== "failed" && currentUser.role === "admin" && (
+          {payment && (payment.status === "pending" || payment.status === "flagged") && currentUser.role === "admin" && (
             <>
               <Button 
                 variant="destructive" 

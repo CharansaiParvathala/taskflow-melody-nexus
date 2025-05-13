@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -43,12 +42,18 @@ const CheckerDashboard = () => {
           throw error;
         }
         
-        setPayments(data || []);
+        // Cast the data to ensure it matches our Payment type
+        const typedPayments = data?.map(payment => ({
+          ...payment,
+          status: payment.status as Payment['status'] // Safe cast after updating type
+        })) || [];
+        
+        setPayments(typedPayments);
         
         // Count payments by status
-        const newCount = data?.filter(p => p.status === 'pending').length || 0;
-        const flagged = data?.filter(p => p.status === 'flagged').length || 0;
-        const pendingClarification = data?.filter(p => p.status === 'pending' && p.notes?.includes('clarification')).length || 0;
+        const newCount = typedPayments.filter(p => p.status === 'pending').length || 0;
+        const flagged = typedPayments.filter(p => p.status === 'flagged').length || 0;
+        const pendingClarification = typedPayments.filter(p => p.status === 'pending' && p.notes?.includes('clarification')).length || 0;
         
         setNewRequestsCount(newCount);
         setFlaggedCount(flagged);
@@ -72,10 +77,15 @@ const CheckerDashboard = () => {
         }, 
         payload => {
           if (payload.eventType === 'INSERT') {
-            setPayments(prev => [payload.new as Payment, ...prev]);
-            if (payload.new.status === 'pending') {
+            const newPayment = {
+              ...payload.new,
+              status: payload.new.status as Payment['status']
+            } as Payment;
+            
+            setPayments(prev => [newPayment, ...prev]);
+            if (newPayment.status === 'pending') {
               setNewRequestsCount(prev => prev + 1);
-            } else if (payload.new.status === 'flagged') {
+            } else if (newPayment.status === 'flagged') {
               setFlaggedCount(prev => prev + 1);
             }
           } else if (payload.eventType === 'UPDATE') {
@@ -83,10 +93,15 @@ const CheckerDashboard = () => {
               prev.map(payment => {
                 if (payment.id === payload.new.id) {
                   // Update counts when status changes
-                  if (payment.status !== payload.new.status) {
-                    updateStatusCounts(payment.status, payload.new.status);
+                  const newPayment = {
+                    ...payload.new,
+                    status: payload.new.status as Payment['status']
+                  } as Payment;
+                  
+                  if (payment.status !== newPayment.status) {
+                    updateStatusCounts(payment.status, newPayment.status);
                   }
-                  return payload.new as Payment;
+                  return newPayment;
                 }
                 return payment;
               })
@@ -102,8 +117,23 @@ const CheckerDashboard = () => {
     };
   }, []);
 
+  // Fix the click function calls by using tabsTrigger refs instead
+  const selectNewTab = () => {
+    const tabTrigger = document.querySelector('[data-value="new"]') as HTMLButtonElement | null;
+    if (tabTrigger) {
+      tabTrigger.click();
+    }
+  };
+
+  const selectFlaggedTab = () => {
+    const tabTrigger = document.querySelector('[data-value="flagged"]') as HTMLButtonElement | null;
+    if (tabTrigger) {
+      tabTrigger.click();
+    }
+  };
+
   // Helper function to update status counts when a payment status changes
-  const updateStatusCounts = (oldStatus: string, newStatus: string) => {
+  const updateStatusCounts = (oldStatus: Payment['status'], newStatus: Payment['status']) => {
     if (oldStatus === 'pending') {
       setNewRequestsCount(prev => prev - 1);
     } else if (oldStatus === 'flagged') {
@@ -142,7 +172,7 @@ const CheckerDashboard = () => {
               size="sm" 
               variant="outline" 
               className="w-full"
-              onClick={() => document.querySelector('[data-value="new"]')?.click()}
+              onClick={selectNewTab}
             >
               View All Requests
             </Button>
@@ -159,7 +189,7 @@ const CheckerDashboard = () => {
               size="sm" 
               variant="outline" 
               className="w-full"
-              onClick={() => document.querySelector('[data-value="flagged"]')?.click()}
+              onClick={selectFlaggedTab}
             >
               Review Anomalies
             </Button>

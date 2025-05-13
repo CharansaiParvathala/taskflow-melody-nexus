@@ -34,6 +34,7 @@ interface AuthContextType {
   currentUser: User;
   switchRole: (role: UserRole) => void;
   isAuthenticated: boolean;
+  login: (email: string, password: string) => Promise<boolean>; // Added login method
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -62,9 +63,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       localStorage.setItem("currentRole", role);
     }
   };
+  
+  // Mock login function for the Login page
+  const login = async (email: string, password: string): Promise<boolean> => {
+    // Find user with matching email
+    const user = mockUsers.find(u => u.email.toLowerCase() === email.toLowerCase());
+    
+    if (user) {
+      // In a real app, we'd validate the password here
+      setCurrentUser(user);
+      setIsAuthenticated(true);
+      localStorage.setItem("currentRole", user.role);
+      return true;
+    }
+    
+    return false;
+  };
 
   return (
-    <AuthContext.Provider value={{ currentUser, switchRole, isAuthenticated }}>
+    <AuthContext.Provider value={{ currentUser, switchRole, isAuthenticated, login }}>
       {children}
     </AuthContext.Provider>
   );

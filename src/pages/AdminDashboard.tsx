@@ -48,11 +48,17 @@ const AdminDashboard = () => {
           throw error;
         }
         
-        setPaymentRequests(data || []);
+        // Cast the data to ensure it matches our Payment type
+        const typedPayments = data?.map(payment => ({
+          ...payment,
+          status: payment.status as Payment['status'] // Safe cast after updating type
+        })) || [];
+        
+        setPaymentRequests(typedPayments);
         
         // Count payments by status
-        const pendingCount = data?.filter(p => p.status === 'pending' || p.status === 'flagged').length || 0;
-        const completedCount = data?.filter(p => p.status === 'completed').length || 0;
+        const pendingCount = typedPayments.filter(p => p.status === 'pending' || p.status === 'flagged').length || 0;
+        const completedCount = typedPayments.filter(p => p.status === 'completed').length || 0;
         
         setPendingPayments(pendingCount);
         setCompletedPayments(completedCount);
@@ -75,22 +81,32 @@ const AdminDashboard = () => {
         }, 
         payload => {
           if (payload.eventType === 'INSERT') {
-            setPaymentRequests(prev => [payload.new as Payment, ...prev]);
+            const newPayment = {
+              ...payload.new,
+              status: payload.new.status as Payment['status']
+            } as Payment;
+            
+            setPaymentRequests(prev => [newPayment, ...prev]);
             setPendingPayments(prev => prev + 1);
           } else if (payload.eventType === 'UPDATE') {
             setPaymentRequests(prev => 
               prev.map(payment => {
                 if (payment.id === payload.new.id) {
                   // Update counts when status changes
-                  if (payment.status !== payload.new.status) {
-                    if (payload.new.status === 'completed') {
+                  const newPayment = {
+                    ...payload.new,
+                    status: payload.new.status as Payment['status']
+                  } as Payment;
+                  
+                  if (payment.status !== newPayment.status) {
+                    if (newPayment.status === 'completed') {
                       setPendingPayments(p => p - 1);
                       setCompletedPayments(c => c + 1);
-                    } else if (payload.new.status === 'failed' && (payment.status === 'pending' || payment.status === 'flagged')) {
+                    } else if (newPayment.status === 'failed' && (payment.status === 'pending' || payment.status === 'flagged')) {
                       setPendingPayments(p => p - 1);
                     }
                   }
-                  return payload.new as Payment;
+                  return newPayment;
                 }
                 return payment;
               })

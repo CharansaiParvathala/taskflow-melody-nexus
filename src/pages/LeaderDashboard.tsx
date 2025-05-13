@@ -47,7 +47,13 @@ const LeaderDashboard = () => {
           throw error;
         }
         
-        setJobs(data || []);
+        // Cast the data to ensure it matches our Job type
+        const typedJobs = data?.map(job => ({
+          ...job,
+          status: job.status as Job['status'] // Safe cast after updating type
+        })) || [];
+        
+        setJobs(typedJobs);
       } catch (error) {
         console.error("Error fetching jobs:", error);
         toast.error("Failed to load jobs");
@@ -69,10 +75,23 @@ const LeaderDashboard = () => {
         }, 
         payload => {
           if (payload.eventType === 'INSERT') {
-            setJobs(prevJobs => [payload.new as Job, ...prevJobs]);
+            const newJob = {
+              ...payload.new,
+              status: payload.new.status as Job['status']
+            } as Job;
+            
+            setJobs(prevJobs => [newJob, ...prevJobs]);
           } else if (payload.eventType === 'UPDATE') {
             setJobs(prevJobs => 
-              prevJobs.map(job => job.id === payload.new.id ? payload.new as Job : job)
+              prevJobs.map(job => {
+                if (job.id === payload.new.id) {
+                  return {
+                    ...payload.new,
+                    status: payload.new.status as Job['status']
+                  } as Job;
+                }
+                return job;
+              })
             );
           } else if (payload.eventType === 'DELETE') {
             setJobs(prevJobs => prevJobs.filter(job => job.id !== payload.old.id));

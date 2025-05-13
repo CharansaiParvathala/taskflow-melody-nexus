@@ -4,12 +4,17 @@ import AdminDashboard from "@/pages/AdminDashboard";
 import LeaderDashboard from "@/pages/LeaderDashboard";
 import CheckerDashboard from "@/pages/CheckerDashboard";
 import { Navigate } from "react-router-dom";
+import Login from "@/pages/Login";
 
 export const RoleRouter = () => {
-  const { currentUser } = useAuth();
+  const { currentUser, isAuthenticated } = useAuth();
+
+  if (!isAuthenticated) {
+    return <Login />;
+  }
 
   if (!currentUser) {
-    return <Navigate to="/login" />;
+    return <Login />;
   }
 
   switch (currentUser.role) {
@@ -20,6 +25,6 @@ export const RoleRouter = () => {
     case "checker":
       return <CheckerDashboard />;
     default:
-      return <Navigate to="/login" />;
+      return <Login />;
   }
 };
